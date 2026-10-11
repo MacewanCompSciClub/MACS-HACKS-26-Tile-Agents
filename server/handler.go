@@ -11,7 +11,25 @@ import (
 	"encoding/json"
 	"fmt"
 	"encoding/binary"
+	"example/hello/server/shared"
 )
+
+type Vec2 = shared.Vec2
+type TileDelta = shared.TileDelta
+
+type MessageType = shared.MessageType
+
+const (
+	MsgRoundStart = shared.MsgRoundStart
+	MsgWorldState = shared.MsgWorldState
+	MsgDeltaState = shared.MsgDeltaState
+	MsgRoundEnd   = shared.MsgRoundEnd
+)
+
+type RoundStartMessage = shared.RoundStartMessage
+type DeltaStateMessage = shared.DeltaStateMessage
+type RoundOverMessage = shared.RoundOverMessage
+type SpectatorRoundInfoMessage = shared.SpectatorRoundInfoMessage
 
 type Role int
 
@@ -33,35 +51,6 @@ type Client struct {
 	token string
 }
 
-type Vec2 struct {
-	x, y int32
-}
-
-type TileDelta struct {
-	Pos Vec2	`json:"pos"`
-	Value uint8 `json:"tile_value"`
-}
-
-type vec2JSON struct {
-	X int32 `json:"x"`
-	Y int32 `json:"y"`
-}
-
-func (v Vec2) MarshalJSON() ([]byte, error) {
-	return json.Marshal([2]int32{v.x, v.y})
-}
-
-func (v *Vec2) UnmarshalJSON(b []byte) error {
-	var a []int32
-	if err := json.Unmarshal(b, &a); err != nil {
-		return err
-	}
-	if len(a) != 2 {
-		return fmt.Errorf("Vec2: expected 2 elements, got %d", len(a))
-	}
-	v.x, v.y = a[0], a[1]
-	return nil
-}
 
 type PlayerInstance struct {
 	token string
@@ -225,10 +214,10 @@ func newDeltaStateMessage(tick uint32, localPlayerPos Vec2, tileDeltas []TileDel
 		tileDeltas = []TileDelta{} // marshals to [] instead of null
 	}
 	return mustMarshal(DeltaStateMessage{
-		MessageType:  MsgWorldState,
+		MessageType:  MsgDeltaState,
 		CurrentTick:  tick,
-		LocalPlayerX: localPlayerPos.x,
-		LocalPlayerY: localPlayerPos.y,
+		LocalPlayerX: localPlayerPos.X,
+		LocalPlayerY: localPlayerPos.Y,
 		DeltaCount:   uint32(len(tileDeltas)),
 		DeltaUpdates: tileDeltas,
 		WorldHash:    worldHash,
@@ -236,7 +225,7 @@ func newDeltaStateMessage(tick uint32, localPlayerPos Vec2, tileDeltas []TileDel
 }
 
 func newRoundOverMessage(score uint32, placement uint32) []byte {
-	return mustMarshal(RoundOverMessage{Score:  score, Placement:  placement})
+	return mustMarshal(RoundOverMessage{MessageType: MsgRoundEnd, Score:  score, Placement:  placement})
 }
 
 func updateTileDeltas(world * WorldState, tileDeltas []TileDelta) []TileDelta {
@@ -275,7 +264,7 @@ func (s *Server) runGame() {
 	}
 	// Initalize players with round robin spawn points.
 	players := s.initPlayerInstances(spawnPoints[:])
-	world := initWorld(Vec2{8, 8}, maxTileHealth, players[:])
+	world := initWorld(Vec2{X:8, Y:8}, maxTileHealth, players[:])
 
 	tileDeltas := make([]TileDelta, 0, 512) // len 0, capacity 64, one allocation up front
 

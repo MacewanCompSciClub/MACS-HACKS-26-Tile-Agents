@@ -13,9 +13,9 @@ type WorldState struct {
 func initWorld(size Vec2, tileHealth uint8, players []PlayerInstance) * WorldState {
 
 	if tileHealth > 7 { panic(fmt.Sprintf("tileHealth must be less than 7! Got %d", tileHealth)) }
-	if size.x < 8 || size.y < 8 { panic(fmt.Sprintf("World size must be atleast 8x8! Got %+v", size))}
+	if size.X < 8 || size.Y < 8 { panic(fmt.Sprintf("World size must be atleast 8x8! Got %+v", size))}
 
-	w, h := int32(size.x), int32(size.y)
+	w, h := int32(size.X), int32(size.Y)
 	g := &WorldState{w: w, h: h, cells: make([]uint8, w*h), updated: make(map[Vec2]struct{}, 256)}
 	for i := range g.cells {
 		g.cells[i] = tileHealth;
@@ -31,11 +31,11 @@ func initWorld(size Vec2, tileHealth uint8, players []PlayerInstance) * WorldSta
 }
 
 func (world * WorldState) tileIndex(position Vec2) int32 {
-	if position.x < 0 || position.x >= world.w || position.y < 0 || position.y >= world.h {
+	if position.X < 0 || position.X >= world.w || position.Y < 0 || position.Y >= world.h {
 		panic(fmt.Sprintf("position out of bounds: (%d, %d) in %dx%d grid",
-			position.x, position.y, world.w, world.h))
+			position.X, position.Y, world.w, world.h))
 	}
-	return position.y * world.w + position.x
+	return position.Y * world.w + position.X
 }
 
 func (world * WorldState) tilePosition(index int32) Vec2 {
@@ -43,11 +43,11 @@ func (world * WorldState) tilePosition(index int32) Vec2 {
 		panic(fmt.Sprintf("cell index out of bounds: %d in grid of %d cells", index, len(world.cells)))
 	}
 
-	return Vec2{x: index % world.w, y: index / world.w}
+	return Vec2{X: index % world.w, Y: index / world.w}
 }
 
 func (world * WorldState) updateTile(pos Vec2, newValue uint8) {
-	world.updated[Vec2{x: pos.x, y: pos.y}] = struct{}{}
+	world.updated[Vec2{X: pos.X, Y: pos.Y}] = struct{}{}
 	world.cells[world.tileIndex(pos)] = newValue;
 }
 

@@ -1,4 +1,34 @@
-package main
+package shared 
+
+import (
+	"encoding/json"
+	"fmt"
+)
+
+type Vec2 struct {
+	X, Y int32
+}
+
+type TileDelta struct {
+	Pos Vec2	`json:"pos"`
+	Value uint8 `json:"tile_value"`
+}
+
+func (v Vec2) MarshalJSON() ([]byte, error) {
+	return json.Marshal([2]int32{v.X, v.Y})
+}
+
+func (v *Vec2) UnmarshalJSON(b []byte) error {
+	var a []int32
+	if err := json.Unmarshal(b, &a); err != nil {
+		return err
+	}
+	if len(a) != 2 {
+		return fmt.Errorf("Vec2: expected 2 elements, got %d", len(a))
+	}
+	v.X, v.Y = a[0], a[1]
+	return nil
+}
 
 type MessageType uint32 
 
@@ -28,6 +58,7 @@ type DeltaStateMessage struct {
 }
 
 type RoundOverMessage struct {
+	MessageType  MessageType `json:"message_type"`
 	Score	  uint32 `json:"score"`
 	Placement uint32 `json:"placement"`
 }
