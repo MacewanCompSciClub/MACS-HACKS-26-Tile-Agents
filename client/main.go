@@ -36,8 +36,21 @@ func GetMessageType(m * Message) (MessageType, error) {
 	}
 }
 
+func mustUnmarshal(data []byte, d any) {
+	if err := json.Unmarshal(data, &d); err != nil {
+		panic(fmt.Sprintf("json unmarshal failed: %v", err))
+	}
+}
+
+func deserializeRoundStartMessage(m Message) shared.RoundStartMessage {
+	var roundStartMSG shared.RoundStartMessage
+	mustUnmarshal(m.data, &roundStartMSG)
+	return roundStartMSG
+}
+
 func waitWaitForRoundStart(ctx context.Context, client * Client) WorldState {
 	startReceived := false
+	var state WorldState
     for {
 		m, err := client.nextMessage(ctx)
 		if err != nil {
@@ -47,11 +60,14 @@ func waitWaitForRoundStart(ctx context.Context, client * Client) WorldState {
 		if err != nil { continue; }
 		switch messageType {
 			case shared.MsgRoundStart:
-				log.Printf("got round start")
+				var roundStartMSG = deserializeRoundStartMessage(m)
+				state.w = roundStartMSG.WorldSizeX
+				state.h = roundStartMSG.WorldSizeY
 				startReceived = true
 			case shared.MsgWorldState:
 				log.Printf("got world state: %d bytes", len(m.data))
 				if (startReceived) { return WorldState{0,0} }
+				return state
         }
     }
 }
