@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"encoding/binary"
 	"example/hello/server/shared"
+	"hash/crc32"
 )
 
 type Vec2 = shared.Vec2
@@ -209,7 +210,7 @@ func newWorldStateMessage(world * WorldState, tick uint32, players []PlayerInsta
 	return buf
 }
 
-func newDeltaStateMessage(tick uint32, localPlayerPos Vec2, tileDeltas []TileDelta, worldHash uint64) []byte {
+func newDeltaStateMessage(tick uint32, localPlayerPos Vec2, tileDeltas []TileDelta, worldHash uint32) []byte {
 	if tileDeltas == nil {
 		tileDeltas = []TileDelta{} // marshals to [] instead of null
 	}
@@ -280,17 +281,21 @@ func (s *Server) runGame() {
 	var currentTick uint32 = 1
 	for {
 		// Send delta update messages to all players
+		var worldHash uint32 = crc32.ChecksumIEEE(world.cells)
+
 		for i := range players {
 			p := &players[i]
 			if (p.dead) { continue; }
 			tileDeltas = updateTileDeltas(world, tileDeltas)
-			deltaStateMSG := newDeltaStateMessage(currentTick, p.pos, tileDeltas[:], 67)
+			deltaStateMSG := newDeltaStateMessage(currentTick, p.pos, tileDeltas[:], worldHash)
 			s.sendToPlayer(p.token, websocket.MessageText, deltaStateMSG);
 		}
 
 		time.Sleep(time.Duration(responseTimeMS) * time.Millisecond)
 		currentTick++
 		// Process Input
+
+		// update world.
 		for i := range world.cells {
 			tilePos := world.tilePosition(int32(i))
 			tileHealth := getTileHealth(world.cells[i])

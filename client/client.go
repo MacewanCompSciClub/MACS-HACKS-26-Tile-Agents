@@ -12,8 +12,8 @@ type Message struct {
 
 type Client struct {
 	conn * websocket.Conn
-	messages  chan Message 
-	readError chan error
+	messages chan Message 
+	err      error
 }
 
 func Connect(ctx context.Context, url string, token string) (*Client, error) {
@@ -28,7 +28,6 @@ func Connect(ctx context.Context, url string, token string) (*Client, error) {
     c := &Client{
         conn:      conn,
         messages:  make(chan Message, 1024),
-        readError: make(chan error, 1),
     }
 
     // Reader goroutine: only calls Read, never blocks on game logic,
@@ -37,7 +36,7 @@ func Connect(ctx context.Context, url string, token string) (*Client, error) {
         for {
             typ, data, err := conn.Read(ctx)
             if err != nil {
-                c.readError <- err
+                c.err = err
                 return
             }
             c.messages <- Message{typ, data}
@@ -51,9 +50,41 @@ func Connect(ctx context.Context, url string, token string) (*Client, error) {
 func (c *Client) nextMessage(ctx context.Context) (Message, error) {
 	select {
 		case m, ok := <-c.messages:
-			if !ok { return Message{}, <-c.readError }
+			if !ok { return Message{}, c.err }
 			return m, nil
 		case <-ctx.Done():
 			return Message{}, ctx.Err()
+	}
+}
+
+// Non blocking returns false if no new messages.
+func (c * Client) pollMessage() (Message, bool, error) {
+	select {
+		case m, ok := <-c.messages:
+			if !ok { return Message{}, false, c.err }
+			return m, true, nil
+		default:
+			return Message{}, false, nil
+	}
+}
+
+func (c * Client) nextMessages(ctx context.Context) ([]Message, error) {
+	var messages []Message
+	
+	m, err := c.nextMessage(ctx)
+	if (err != nil) { return nil, err }
+	messages = append(messages, m)
+
+	for {
+		m, ok, err := c.pollMessage()
+		if err != nil {
+			// Connection closed mid-drain. Deliver what we already pulled
+			// out; the next call will return c.err.
+			return messages, nil
+		}
+		if !ok {
+			return messages, nil
+		}
+		messages = append(messages, m)
 	}
 }
