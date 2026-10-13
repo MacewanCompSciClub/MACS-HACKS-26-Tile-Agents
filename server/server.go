@@ -30,28 +30,40 @@ const (
 type RoundStartMessage = shared.RoundStartMessage
 type DeltaStateMessage = shared.DeltaStateMessage
 type RoundOverMessage = shared.RoundOverMessage
-type SpectatorRoundInfoMessage = shared.SpectatorRoundInfoMessage
 
 type Role int
 
 const (
 	RolePlayer Role = iota
 	RoleSpectator
+	RoleMasterSpectator
 )
 
 type Server struct {
 	mu      sync.Mutex
-	conns   map[string]*Client  // everyone connected
+	auth    *authTable
+	clients map[string]*Client  // All players connected. Keyed by token.
+	spectators []*Spectator
+	spectatorView SpectatorView
 	scores  map[string]uint32
 	player_inputs  chan input
 }
 
+type SpectatorView struct {
+	roundInProgress  bool
+	roundInfoMSG	 Message // sent only during a round
+	worldSnapshotMSG Message
+}
+
 type Client struct {
 	conn *websocket.Conn
-	role Role // never changes after creation, so safe to read without the lock
 	token string
 }
 
+type Message struct {
+	typ websocket.MessageType
+	data []byte
+}
 
 type PlayerInstance struct {
 	token string
@@ -66,9 +78,10 @@ type input struct {
 	data []byte
 }
 
-func NewServer() *Server {
+func NewServer(auth * authTable) *Server {
 	return &Server{
-		conns:			make(map[string]*Client),
+		auth: auth,
+		clients:		make(map[string]*Client),
 		player_inputs:  make(chan input, 64),
 	}
 }
@@ -79,42 +92,63 @@ func (s *Server) Handler() http.Handler {
 	return mux
 }
 
-func getRole(t string) Role {
-	return RolePlayer;
-}
-
 func (s *Server) add_client(c *Client) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	s.conns[c.token] = c
-	log.Printf("connected role=%d (%d total)", c.role, len(s.conns))
+	s.clients[c.token] = c
+	log.Printf("connected client. (%d total)", len(s.clients))
 	go s.runGame()
+}
+
+func (server *Server) add_spectator(spectator * Spectator) {
+	server.mu.Lock()
+	defer server.mu.Unlock()
+
+	if server.spectatorView.roundInProgress {
+		spectator.enqueue(server.spectatorView.roundInfoMSG)
+		// catchup.
+	}
+
+	server.spectators = append(server.spectators, spectator)
+	log.Printf("connected spectator. (%d total)", len(server.spectators))
 }
 
 func (s *Server) remove_client(c *Client){
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	delete(s.conns, c.token)
+	delete(s.clients, c.token)
 }
 
-func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
-	token := r.URL.Query().Get("token")
-	if token == "" {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
-		return
-	}
+func (s *Server) remove_spectator(spectator * Spectator) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
-	conn, err := websocket.Accept(w, r, nil)
+	for i, x := range s.spectators {
+		if x == spectator {
+			last := len(s.spectators) - 1
+			s.spectators[i] = s.spectators[last] // swap with the last element
+			s.spectators[last] = nil             // let the GC reclaim it
+			s.spectators = s.spectators[:last]
+			return
+		}
+	}
+}
+
+var acceptOpts = &websocket.AcceptOptions{
+	OriginPatterns: []string{"yoursite.com", "localhost:*"},
+}
+
+func (s *Server) handlePlayer(w http.ResponseWriter, r *http.Request, token string) {
+	conn, err := websocket.Accept(w, r, acceptOpts)
 	if err != nil {
 		log.Println("accept:", err)
 		return
 	}
 	defer conn.CloseNow()
 
-	
-	c := &Client{conn: conn, role: getRole(token), token: token}
+	c := &Client{conn: conn, token: token}
 	s.add_client(c)
 	defer s.remove_client(c)
 
@@ -130,12 +164,53 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func (server *Server) handleSpectator(w http.ResponseWriter, r *http.Request, masterSpectator bool) {
+	conn, err := websocket.Accept(w, r, acceptOpts)
+	if err != nil {
+		log.Println("accept:", err)
+		return
+	}
+	defer conn.CloseNow()
+
+	ctx, cancel := context.WithCancel(r.Context())
+	defer cancel()
+
+	s := &Spectator{conn: conn, send: make(chan Message, 32), master: masterSpectator}
+	server.add_spectator(s)
+	defer server.remove_spectator(s)
+
+	if !masterSpectator {
+		ctx = conn.CloseRead(ctx)
+		s.writeLoop(ctx)
+		return
+	}
+}
+
+func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
+	token := r.URL.Query().Get("token")
+	role, ok := s.auth.getRole(token)
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		log.Printf("rejected connection: invalid token %q from %s", token, r.RemoteAddr)
+		return
+	}
+
+	switch role {
+		case RolePlayer:
+			s.handlePlayer(w, r, token)
+		case RoleSpectator:
+			s.handleSpectator(w, r, false)
+		case RoleMasterSpectator:
+			s.handleSpectator(w, r, true)
+	}
+}
+
 
 // Tries to find a client from a token.
 func (s *Server) findClient(token string) (*Client, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	c, ok := s.conns[token]
+	c, ok := s.clients[token]
 	return c, ok
 }
 
@@ -144,10 +219,7 @@ func (s *Server) initPlayerInstances(spawns []Vec2) []PlayerInstance {
 	defer s.mu.Unlock()
 
 	var instances []PlayerInstance
-	for _, c := range s.conns {
-		if c.role != RolePlayer {
-			continue // skip spectators
-		}
+	for _, c := range s.clients {
 		instances = append(instances, PlayerInstance{token: c.token})
 	}
 
@@ -192,6 +264,15 @@ func (s *Server) sendToAllPlayers(players []PlayerInstance, typ websocket.Messag
 	}
 }
 
+func (s *Server) sendToSpectators(message Message) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for _, spectator := range s.spectators {
+		spectator.enqueue(message)
+	}
+}
+
 func newRoundStartMessage(numPlayers int, responseTimeMS int) []byte {
 	return mustMarshal(RoundStartMessage{
 		MessageType:    MsgRoundStart,
@@ -202,7 +283,7 @@ func newRoundStartMessage(numPlayers int, responseTimeMS int) []byte {
 	})
 }
 
-func newWorldStateMessage(world * WorldState, tick uint32, players []PlayerInstance) []byte {
+func newWorldStateMessage(world * WorldState, tick uint32) []byte {
 	buf := make([]byte, 1+4+(world.w*world.h))
 	buf[0] = uint8(MsgWorldState)
 	binary.LittleEndian.PutUint32(buf[1:5], tick)
@@ -229,6 +310,19 @@ func newRoundOverMessage(score uint32, placement uint32) []byte {
 	return mustMarshal(RoundOverMessage{MessageType: MsgRoundEnd, Score:  score, Placement:  placement})
 }
 
+func newSpectatorRoundInfoMessage(world * WorldState, players []PlayerInstance) Message {
+	var playerData = spectatorPlayerInfoSnapshot(players)
+
+	var roundInfo = mustMarshal(SpectatorRoundInfoMessage{
+				MessageType:    MsgRoundStart,
+				WorldSizeX:     world.h,
+				WorldSizeY:     world.w,
+				NumPlayers:     len(players),
+				PlayerData:		playerData,
+	})
+	return Message{websocket.MessageText, roundInfo}
+}
+
 func updateTileDeltas(world * WorldState, tileDeltas []TileDelta) []TileDelta {
 	tileDeltas = tileDeltas[:0]
 	for v := range world.updated {
@@ -237,6 +331,37 @@ func updateTileDeltas(world * WorldState, tileDeltas []TileDelta) []TileDelta {
 	clear(world.updated)
 
 	return tileDeltas
+}
+
+func spectatorPlayerInfoSnapshot(players []PlayerInstance) []PlayerSpectatorData {
+	out := make([]PlayerSpectatorData, len(players))
+	for i := range players {
+		p := &players[i]
+		out[i] = PlayerSpectatorData{
+			Pos: p.pos,
+			Score: p.score,
+			Dead:  p.dead,
+		}
+	}
+	return out
+}
+
+func (s * Server) updateSpectatorView(world * WorldState, tick uint32, players []PlayerInstance, tileDeltas []TileDelta, worldHash uint32) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.spectatorView.roundInProgress = true
+
+	var playerData = spectatorPlayerInfoSnapshot(players)
+
+	var roundInfo = mustMarshal(SpectatorRoundInfoMessage{
+				MessageType:    MsgRoundStart,
+				WorldSizeX:     8,
+				WorldSizeY:     8,
+				NumPlayers:     len(players),
+				PlayerData:		playerData,
+	})
+	s.spectatorView.roundInfoMSG = Message{websocket.MessageText, roundInfo}
 }
 
 func findPlayerAt(tilePos Vec2, players []PlayerInstance) *PlayerInstance {
@@ -270,10 +395,11 @@ func (s *Server) runGame() {
 	tileDeltas := make([]TileDelta, 0, 512) // len 0, capacity 64, one allocation up front
 
 	// send initial world state
-
 	roundStartMSG := newRoundStartMessage(len(players), responseTimeMS);
-	initialWorldStateMSG := newWorldStateMessage(world, 1, players[:])
+	initialWorldStateMSG := newWorldStateMessage(world, 1)
 	log.Printf("sending game start and world state message")
+	// send world state to spectators
+	s.sendToSpectators(newSpectatorRoundInfoMessage(world, players))
 
 	s.sendToAllPlayers(players[:], websocket.MessageText,   roundStartMSG)
 	s.sendToAllPlayers(players[:], websocket.MessageBinary, initialWorldStateMSG)
@@ -291,6 +417,7 @@ func (s *Server) runGame() {
 			s.sendToPlayer(p.token, websocket.MessageText, deltaStateMSG);
 		}
 
+		s.updateSpectatorView(world, currentTick, players, tileDeltas, worldHash)
 		time.Sleep(time.Duration(responseTimeMS) * time.Millisecond)
 		currentTick++
 		// Process Input
@@ -320,5 +447,4 @@ func (s *Server) runGame() {
 	}
 
 	log.Printf("sending update for tick 1")
-
 }

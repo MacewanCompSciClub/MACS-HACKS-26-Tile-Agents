@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Game Spectator</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- Screen 1: pick a server -->
+  <div id="start-screen" class="screen">
+    <h1>Game Spectator</h1>
+    <div class="buttons">
+      <button id="connect-local-btn">Connect Local</button>
+      <button id="connect-vps-btn">Connect VPS</button>
+    </div>
+  </div>
+
+  <!-- Screen 2: logs -->
+  <div id="log-screen" class="screen hidden">
+    <header>
+      <h1>Game Spectator</h1>
+      <div class="header-right">
+        <span id="target-label"></span>
+        <span id="status" class="status disconnected">Disconnected</span>
+        <button id="back-btn" class="small">Disconnect</button>
+      </div>
+    </header>
+    <pre id="log"></pre>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

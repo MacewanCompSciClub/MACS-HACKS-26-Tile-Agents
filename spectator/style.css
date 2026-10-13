@@ -1,0 +1,111 @@
+:root {
+  --bg: #12141a;
+  --panel: #1b1e27;
+  --border: #2c303d;
+  --text: #e2e4ea;
+  --muted: #8a8f9e;
+  --accent: #4f8cff;
+  --good: #3ecf8e;
+  --bad: #ff5c6c;
+  --warn: #f5b942;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  min-height: 100vh;
+}
+
+.hidden { display: none !important; }
+
+h1 { font-size: 1.2rem; margin: 0; }
+
+/* Start screen */
+#start-screen {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 24px;
+}
+
+#start-screen h1 { font-size: 1.8rem; }
+
+.buttons {
+  display: flex;
+  gap: 16px;
+}
+
+button {
+  padding: 12px 24px;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  font-size: 1rem;
+  cursor: pointer;
+}
+
+button:hover { filter: brightness(1.1); }
+
+button.small {
+  padding: 6px 12px;
+  font-size: 0.85rem;
+  background: var(--border);
+}
+
+/* Log screen */
+header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 24px;
+  border-bottom: 1px solid var(--border);
+}
+
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+#target-label {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.status {
+  font-size: 0.8rem;
+  padding: 4px 12px;
+  border-radius: 999px;
+  border: 1px solid currentColor;
+}
+
+.status.connected { color: var(--good); }
+.status.connecting { color: var(--warn); }
+.status.disconnected { color: var(--bad); }
+
+#log {
+  margin: 16px 24px;
+  height: calc(100vh - 100px);
+  overflow-y: auto;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 10px;
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+#log .info { color: var(--text); }
+#log .warn { color: var(--warn); }
+#log .error { color: var(--bad); }
+#log .ok { color: var(--good); }
+#log .time { color: var(--muted); }

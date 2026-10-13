@@ -103,7 +103,7 @@ func applyTileDeltas(world * WorldState, tileDeltas []shared.TileDelta, worldHas
 	}
 
 	var hash uint32 = crc32.ChecksumIEEE(world.tiles)
-	if (hash != worldHash) { panic("HASH DOES NOT MATCH") }
+	if (hash != worldHash) { panic("WORLD HASH DOES NOT MATCH") }
 }
 
 func getNextWorldUpdate(ctx context.Context, client * Client, world * WorldState) bool {

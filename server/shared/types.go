@@ -62,9 +62,3 @@ type RoundOverMessage struct {
 	Score	  	 uint32 `json:"score"`
 	Placement	 uint32 `json:"placement"`
 }
-
-type SpectatorRoundInfoMessage struct {
-	WorldSizeX     int    `json:"world_size_x"`
-	WorldSizeY     int    `json:"world_size_y"`
-	NumPlayers     int    `json:"num_players"`
-}
