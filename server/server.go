@@ -278,11 +278,11 @@ func (s *Server) sendToSpectators(message Message) {
 	}
 }
 
-func newRoundStartMessage(numPlayers int, responseTimeMS int) []byte {
+func newRoundStartMessage(numPlayers int, responseTimeMS int, worldSizeX uint32, worldSizeY uint32) []byte {
 	return mustMarshal(RoundStartMessage{
 		MessageType:    MsgRoundStart,
-		WorldSizeX:     8,
-		WorldSizeY:     8,
+		WorldSizeX:     worldSizeX,
+		WorldSizeY:     worldSizeY,
 		NumPlayers:     numPlayers,
 		ResponseTimeMs: responseTimeMS,
 	})
@@ -328,8 +328,8 @@ func newSpectatorRoundInfoMessage(world * WorldState, players []PlayerInstance) 
 
 	var roundInfo = mustMarshal(SpectatorRoundInfoMessage{
 				MessageType:    MsgRoundStart,
-				WorldSizeX:     world.h,
-				WorldSizeY:     world.w,
+				WorldSizeX:     world.w,
+				WorldSizeY:     world.h,
 				NumPlayers:     len(players),
 				PlayerData:		playerData,
 	})
@@ -382,8 +382,8 @@ func (s * Server) updateSpectatorView(world * WorldState, tick uint32, players [
 
 	var roundInfo = mustMarshal(SpectatorRoundInfoMessage{
 				MessageType:    MsgRoundStart,
-				WorldSizeX:     8,
-				WorldSizeY:     8,
+				WorldSizeX:     world.w,
+				WorldSizeY:     world.h,
 				NumPlayers:     len(players),
 				PlayerData:		playerData,
 	})
@@ -482,13 +482,13 @@ func (s *Server) runGame() {
 	}
 	// Initalize players with round robin spawn points.
 	players := s.initPlayerInstances(spawnPoints[:])
-	world := initWorld(Vec2{X:8, Y:8}, maxTileHealth, players[:])
+	world := initWorld(Vec2{X:64, Y:64}, maxTileHealth, players[:])
 
 	tileDeltas := make([]TileDelta, 0, 512) // len 0, capacity 64, one allocation up front
 	playerMoves := make([]Move, 0, len(players))
 
 	// send initial world state
-	roundStartMSG := newRoundStartMessage(len(players), responseTimeMS);
+	roundStartMSG := newRoundStartMessage(len(players), responseTimeMS, uint32(world.h), uint32(world.w));
 	initialWorldStateMSG := newWorldStateMessage(world, 1)
 	log.Printf("sending game start and world state message")
 
