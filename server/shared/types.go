@@ -41,10 +41,10 @@ const (
 
 type RoundStartMessage struct {
 	MessageType    MessageType `json:"message_type"`
-	WorldSizeX     uint32  `json:"world_size_x"`
-	WorldSizeY     uint32  `json:"world_size_y"`
-	NumPlayers     int    `json:"num_players"`
-	ResponseTimeMs int    `json:"response_time_ms"`
+	WorldSizeX     uint32	   `json:"world_size_x"`
+	WorldSizeY     uint32	   `json:"world_size_y"`
+	NumPlayers     int		   `json:"num_players"`
+	ResponseTimeMs int         `json:"response_time_ms"`
 }
 
 type DeltaStateMessage struct {
@@ -57,8 +57,14 @@ type DeltaStateMessage struct {
 	WorldHash    uint32      `json:"world_hash"`
 }
 
+type ClientMoveMessage struct {
+	Tick  uint32 `json:"tick"`
+	MoveX uint32 `json:"move_x"`
+	MoveY uint32 `json:"move_y"`
+}
+
 type RoundOverMessage struct {
 	MessageType  MessageType `json:"message_type"`
-	Score	  	 uint32 `json:"score"`
-	Placement	 uint32 `json:"placement"`
+	Score	  	 uint32		 `json:"score"`
+	Placement	 uint32	     `json:"placement"`
 }

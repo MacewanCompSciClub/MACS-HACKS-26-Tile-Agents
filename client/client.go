@@ -88,3 +88,7 @@ func (c * Client) nextMessages(ctx context.Context) ([]Message, error) {
 		messages = append(messages, m)
 	}
 }
+
+func (c *Client) sendMessage(ctx context.Context, message Message) error {
+	return c.conn.Write(ctx, message.typ, message.data)
+}

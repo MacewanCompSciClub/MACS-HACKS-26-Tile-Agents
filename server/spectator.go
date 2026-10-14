@@ -22,7 +22,7 @@ type SpectatorRoundInfoMessage struct {
 	MessageType  MessageType `json:"message_type"`
 	WorldSizeX     int32   `json:"world_size_x"`
 	WorldSizeY     int32    `json:"world_size_y"`
-	NumPlayers     int    `json:"num_players"`
+	NumPlayers     int      `json:"num_players"`
 	PlayerData []PlayerSpectatorData `json:"player_info"`
 }
 

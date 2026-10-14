@@ -90,9 +90,34 @@ header {
 .status.connecting { color: var(--warn); }
 .status.disconnected { color: var(--bad); }
 
-#log {
+.content {
+  display: flex;
+  gap: 16px;
   margin: 16px 24px;
   height: calc(100vh - 100px);
+}
+
+#canvas-wrap {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+#world-canvas {
+  display: block;
+  image-rendering: pixelated;
+}
+
+#log {
+  flex: 0 0 360px;
+  margin: 0;
+  height: 100%;
   overflow-y: auto;
   background: var(--panel);
   border: 1px solid var(--border);

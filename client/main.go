@@ -99,7 +99,7 @@ func waitWaitForRoundStart(ctx context.Context, client * Client) WorldState {
 func applyTileDeltas(world * WorldState, tileDeltas []shared.TileDelta, worldHash uint32) {
 	for i := range tileDeltas {
 		t := &tileDeltas[i]
-		world.tiles[t.Pos.Y + t.Pos.X * int32(world.w)] = t.Value
+		world.tiles[t.Pos.Y * int32(world.w) + t.Pos.X]= t.Value
 	}
 
 	var hash uint32 = crc32.ChecksumIEEE(world.tiles)
@@ -121,7 +121,9 @@ func getNextWorldUpdate(ctx context.Context, client * Client, world * WorldState
 			case shared.MsgDeltaState:
 				var d shared.DeltaStateMessage
 				if err := json.Unmarshal(m.data, &d); err == nil {
-					log.Printf("Delta update received for tick %d", d.CurrentTick)
+					log.Printf("Delta update received for tick %d Player pos: %d %d", d.CurrentTick, d.LocalPlayerX, d.LocalPlayerY)
+					world.playerX = uint32(d.LocalPlayerX)
+					world.playerY = uint32(d.LocalPlayerY)
 					applyTileDeltas(world, d.DeltaUpdates, d.WorldHash)
 				}
 			case shared.MsgRoundEnd:
@@ -137,8 +139,13 @@ func getNextWorldUpdate(ctx context.Context, client * Client, world * WorldState
 	return false
 }
 
-func sendMoveToServer(x uint32, y uint32, tick uint32) {
-
+func sendMoveToServer(ctx context.Context, client * Client, x uint32, y uint32, tick uint32) {
+	data, err := json.Marshal(shared.ClientMoveMessage{Tick: tick, MoveX: x, MoveY: y});
+	if err != nil {
+		panic(fmt.Sprintf("json marshal failed: %v", err))
+	}
+	log.Print("sending move")
+	client.sendMessage(ctx, Message{typ: websocket.MessageText, data: data})
 }
 
 func main() {
@@ -157,10 +164,10 @@ func main() {
 		if (roundOver) { break; }
 
 		// Calculate where to move 
-		var moveX, moveY uint32 = worldState.playerX, worldState.playerY
+		var moveX, moveY uint32 = worldState.playerX + 1, worldState.playerY
 
 		// Send move to the server
-		sendMoveToServer(moveX, moveY, worldState.currentTick)
+		sendMoveToServer(ctx, client, moveX, moveY, worldState.currentTick)
 	}
 
 	log.Print("exiting")

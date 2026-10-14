@@ -46,7 +46,7 @@ type Server struct {
 	spectators []*Spectator
 	spectatorView SpectatorView
 	scores  map[string]uint32
-	player_inputs  chan input
+	clientMessages chan ClientMessage
 }
 
 type SpectatorView struct {
@@ -57,6 +57,11 @@ type SpectatorView struct {
 
 type Client struct {
 	conn *websocket.Conn
+	token string
+}
+
+type ClientMessage struct {
+	message Message
 	token string
 }
 
@@ -73,16 +78,16 @@ type PlayerInstance struct {
 	score uint32
 }
 
-type input struct {
-	from *websocket.Conn
-	data []byte
+type Move struct {
+	playerIdx uint32
+	pos Vec2
 }
 
 func NewServer(auth * authTable) *Server {
 	return &Server{
 		auth: auth,
 		clients:		make(map[string]*Client),
-		player_inputs:  make(chan input, 64),
+		clientMessages: make(chan ClientMessage, 64),
 	}
 }
 
@@ -153,12 +158,12 @@ func (s *Server) handlePlayer(w http.ResponseWriter, r *http.Request, token stri
 	defer s.remove_client(c)
 
 	for {
-		_, data, err := conn.Read(r.Context())
+		typ, data, err := conn.Read(r.Context())
 		if err != nil {
 			return
 		}
 		select {
-			case s.player_inputs <- input{from: conn, data: data}:
+		case s.clientMessages <- ClientMessage{token: token , message: Message{typ, data}}:
 			default:
 		}
 	}
@@ -291,6 +296,14 @@ func newWorldStateMessage(world * WorldState, tick uint32) []byte {
 	return buf
 }
 
+func newWorldSnapshotMessage(world * WorldState, tick uint32) Message {
+	buf := make([]byte, 1+4+(world.w*world.h))
+	buf[0] = uint8(MsgWorldState)
+	binary.LittleEndian.PutUint32(buf[1:5], tick)
+	copy(buf[5:], world.cells)
+	return Message{websocket.MessageBinary, buf}
+}
+
 func newDeltaStateMessage(tick uint32, localPlayerPos Vec2, tileDeltas []TileDelta, worldHash uint32) []byte {
 	if tileDeltas == nil {
 		tileDeltas = []TileDelta{} // marshals to [] instead of null
@@ -319,6 +332,19 @@ func newSpectatorRoundInfoMessage(world * WorldState, players []PlayerInstance) 
 				WorldSizeY:     world.w,
 				NumPlayers:     len(players),
 				PlayerData:		playerData,
+	})
+	return Message{websocket.MessageText, roundInfo}
+}
+
+func newSpectatorRoundDeltaMessage(world * WorldState, tick uint32, tileDeltas []TileDelta,worldHash uint32, players []PlayerInstance) Message {
+	var playerData = spectatorPlayerInfoSnapshot(players)
+
+	var roundInfo = mustMarshal(SpectatorRoundDeltaMessage{
+				MessageType:    MsgDeltaState,
+				CurrentTick:    tick,
+				DeltaUpdates:   tileDeltas,
+				PlayerData:		playerData,
+				WorldHash:		worldHash,
 	})
 	return Message{websocket.MessageText, roundInfo}
 }
@@ -361,7 +387,9 @@ func (s * Server) updateSpectatorView(world * WorldState, tick uint32, players [
 				NumPlayers:     len(players),
 				PlayerData:		playerData,
 	})
+
 	s.spectatorView.roundInfoMSG = Message{websocket.MessageText, roundInfo}
+	s.spectatorView.worldSnapshotMSG = newWorldSnapshotMessage(world, tick)
 }
 
 func findPlayerAt(tilePos Vec2, players []PlayerInstance) *PlayerInstance {
@@ -371,6 +399,70 @@ func findPlayerAt(tilePos Vec2, players []PlayerInstance) *PlayerInstance {
 		}
 	}
 	panic(fmt.Sprintf("findPlayerAt: no player at tile %+v", tilePos))
+}
+
+func getPlayerWithToken(players []PlayerInstance, token string) (bool, uint32) {
+	for i := range players {
+		if players[i].token == token{
+			return true, uint32(i)
+		}
+	}
+	return false, 0
+}
+
+func (s * Server) getValidPlayerMoves(moves []Move, world * WorldState, players []PlayerInstance, currentTick uint32) []Move {
+	moves = moves[:0]
+    for {
+        select {
+			case msg := <-s.clientMessages:
+				// Check if message is from player in game.
+				ok, idx := getPlayerWithToken(players, msg.token)
+				if (!ok) {
+					log.Printf("ignoring message from player not in game (token: %s)", msg.token)
+					continue;
+				}
+				if players[idx].dead {
+					log.Printf("ignoring message from dead player (token: %s)", msg.token)
+					continue;
+				}
+
+				if (msg.message.typ != websocket.MessageText) {
+					log.Printf("ignoring non text message (token: %s)", msg.token)
+					continue;
+				}
+				var moveMessage shared.ClientMoveMessage
+				if err := json.Unmarshal(msg.message.data, &moveMessage); err != nil {
+					log.Printf("failed to unmarshal move message (token: %s)", msg.token)
+					continue;
+				}
+				var movePos = Vec2{X: int32(moveMessage.MoveX), Y: int32(moveMessage.MoveY)}
+				if (!world.isValidMovePos(movePos)) {
+					log.Printf("invalid move pos %v from player (token: %s)", movePos, msg.token)
+					continue;
+				}
+				log.Printf("got a move pos %v from player (token: %s)", movePos, msg.token)
+				moves = append(moves, Move{playerIdx: idx, pos: movePos})
+			default:
+				return moves
+        }
+    }
+}
+
+func applyMove(move Move, world * WorldState, players []PlayerInstance) {
+	var fromPos = players[move.playerIdx].pos
+	var fromTile = world.cells[world.tileIndex(players[move.playerIdx].pos)]
+	var toTile = world.cells[world.tileIndex(move.pos)]
+	// Assert that there is actually a player where we are moving from.
+	if (!isPlayerOnTile(fromTile)) {
+		panic(fmt.Sprintf("player from tile mismatch. The tile the player is moving from doesn't canonically have a player on it. Player: %v Tile: %v", players[move.playerIdx].pos,fromPos))
+	}
+	// Double check the move is valid.
+	if (!(getTileHealth(toTile) > 0)) {
+		panic(fmt.Sprintf("player trying to move to destroyed tile: %v", move.pos))
+	}
+	world.updateTile(fromPos,  fromTile & 0b0111);
+	world.updateTile(move.pos, toTile   | 0b1000);
+	players[move.playerIdx].pos = move.pos;
 }
 
 
@@ -393,13 +485,16 @@ func (s *Server) runGame() {
 	world := initWorld(Vec2{X:8, Y:8}, maxTileHealth, players[:])
 
 	tileDeltas := make([]TileDelta, 0, 512) // len 0, capacity 64, one allocation up front
+	playerMoves := make([]Move, 0, len(players))
 
 	// send initial world state
 	roundStartMSG := newRoundStartMessage(len(players), responseTimeMS);
 	initialWorldStateMSG := newWorldStateMessage(world, 1)
 	log.Printf("sending game start and world state message")
+
 	// send world state to spectators
 	s.sendToSpectators(newSpectatorRoundInfoMessage(world, players))
+	s.sendToSpectators(newWorldSnapshotMessage(world, 1))
 
 	s.sendToAllPlayers(players[:], websocket.MessageText,   roundStartMSG)
 	s.sendToAllPlayers(players[:], websocket.MessageBinary, initialWorldStateMSG)
@@ -409,18 +504,26 @@ func (s *Server) runGame() {
 		// Send delta update messages to all players
 		var worldHash uint32 = crc32.ChecksumIEEE(world.cells)
 
+		tileDeltas = updateTileDeltas(world, tileDeltas)
 		for i := range players {
 			p := &players[i]
 			if (p.dead) { continue; }
-			tileDeltas = updateTileDeltas(world, tileDeltas)
 			deltaStateMSG := newDeltaStateMessage(currentTick, p.pos, tileDeltas[:], worldHash)
 			s.sendToPlayer(p.token, websocket.MessageText, deltaStateMSG);
 		}
 
+		s.sendToSpectators(newSpectatorRoundDeltaMessage(world, currentTick, tileDeltas, worldHash, players[:]))
 		s.updateSpectatorView(world, currentTick, players, tileDeltas, worldHash)
 		time.Sleep(time.Duration(responseTimeMS) * time.Millisecond)
 		currentTick++
+
 		// Process Input
+		playerMoves = s.getValidPlayerMoves(playerMoves, world, players, currentTick)
+
+		// Apply moves
+		for i := range playerMoves {
+			applyMove(playerMoves[i], world, players)
+		}
 
 		// update world.
 		for i := range world.cells {

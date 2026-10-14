@@ -30,6 +30,10 @@ func initWorld(size Vec2, tileHealth uint8, players []PlayerInstance) * WorldSta
 	return g
 }
 
+func (world * WorldState) positionOutOfBounds(position Vec2) bool {
+	return position.X < 0 || position.X >= world.w || position.Y < 0 || position.Y >= world.h
+}
+
 func (world * WorldState) tileIndex(position Vec2) int32 {
 	if position.X < 0 || position.X >= world.w || position.Y < 0 || position.Y >= world.h {
 		panic(fmt.Sprintf("position out of bounds: (%d, %d) in %dx%d grid",
@@ -49,6 +53,12 @@ func (world * WorldState) tilePosition(index int32) Vec2 {
 func (world * WorldState) updateTile(pos Vec2, newValue uint8) {
 	world.updated[Vec2{X: pos.X, Y: pos.Y}] = struct{}{}
 	world.cells[world.tileIndex(pos)] = newValue;
+}
+
+func (world * WorldState) isValidMovePos(pos Vec2) bool {
+	if (world.positionOutOfBounds(pos)) { return false }
+	if (getTileHealth(world.cells[world.tileIndex(pos)]) == 0) { return false; }
+	return true;
 }
 
 func makeTile(health uint8, playerOnTile bool) uint8 {
