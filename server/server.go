@@ -11,25 +11,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"encoding/binary"
-	"example/hello/server/shared"
 	"hash/crc32"
 )
-
-type Vec2 = shared.Vec2
-type TileDelta = shared.TileDelta
-
-type MessageType = shared.MessageType
-
-const (
-	MsgRoundStart = shared.MsgRoundStart
-	MsgWorldState = shared.MsgWorldState
-	MsgDeltaState = shared.MsgDeltaState
-	MsgRoundEnd   = shared.MsgRoundEnd
-)
-
-type RoundStartMessage = shared.RoundStartMessage
-type DeltaStateMessage = shared.DeltaStateMessage
-type RoundOverMessage = shared.RoundOverMessage
 
 type Role int
 
@@ -47,6 +30,7 @@ type Server struct {
 	spectatorView SpectatorView
 	scores  map[string]uint32
 	clientMessages chan ClientMessage
+	roundInProgresss bool
 }
 
 type SpectatorView struct {
@@ -103,7 +87,10 @@ func (s *Server) add_client(c *Client) {
 
 	s.clients[c.token] = c
 	log.Printf("connected client. (%d total)", len(s.clients))
-	go s.runGame()
+	if (!s.roundInProgresss) {
+		s.roundInProgresss = true
+		go s.runGame()
+	}
 }
 
 func (server *Server) add_spectator(spectator * Spectator) {
@@ -112,7 +99,7 @@ func (server *Server) add_spectator(spectator * Spectator) {
 
 	if server.spectatorView.roundInProgress {
 		spectator.enqueue(server.spectatorView.roundInfoMSG)
-		// catchup.
+		spectator.enqueue(server.spectatorView.worldSnapshotMSG)
 	}
 
 	server.spectators = append(server.spectators, spectator)
@@ -152,6 +139,8 @@ func (s *Server) handlePlayer(w http.ResponseWriter, r *http.Request, token stri
 		return
 	}
 	defer conn.CloseNow()
+
+	log.Printf("Accepting connection from token: %s", token)
 
 	c := &Client{conn: conn, token: token}
 	s.add_client(c)
@@ -410,6 +399,12 @@ func getPlayerWithToken(players []PlayerInstance, token string) (bool, uint32) {
 	return false, 0
 }
 
+func (s * Server) LogSpectator(format string, args ...any) {
+	text := fmt.Sprintf(format, args...)
+	log.Print(text)
+	s.sendToSpectators(newSpectatorLogMessage(text))
+}
+
 func (s * Server) getValidPlayerMoves(moves []Move, world * WorldState, players []PlayerInstance, currentTick uint32) []Move {
 	moves = moves[:0]
     for {
@@ -430,14 +425,14 @@ func (s * Server) getValidPlayerMoves(moves []Move, world * WorldState, players 
 					log.Printf("ignoring non text message (token: %s)", msg.token)
 					continue;
 				}
-				var moveMessage shared.ClientMoveMessage
+				var moveMessage ClientMoveMessage
 				if err := json.Unmarshal(msg.message.data, &moveMessage); err != nil {
 					log.Printf("failed to unmarshal move message (token: %s)", msg.token)
 					continue;
 				}
 				var movePos = Vec2{X: int32(moveMessage.MoveX), Y: int32(moveMessage.MoveY)}
 				if (!world.isValidMovePos(movePos)) {
-					log.Printf("invalid move pos %v from player (token: %s)", movePos, msg.token)
+					s.LogSpectator("invalid move pos %v from player (token: %s)", movePos, msg.token)
 					continue;
 				}
 				log.Printf("got a move pos %v from player (token: %s)", movePos, msg.token)
@@ -456,6 +451,10 @@ func applyMove(move Move, world * WorldState, players []PlayerInstance) {
 	if (!isPlayerOnTile(fromTile)) {
 		panic(fmt.Sprintf("player from tile mismatch. The tile the player is moving from doesn't canonically have a player on it. Player: %v Tile: %v", players[move.playerIdx].pos,fromPos))
 	}
+
+	if (isPlayerOnTile(toTile)) {
+		panic(fmt.Sprintf("Move destination has a player on it! Player Pos: %v Destination Tile: %v", players[move.playerIdx].pos, move.pos))
+	}
 	// Double check the move is valid.
 	if (!(getTileHealth(toTile) > 0)) {
 		panic(fmt.Sprintf("player trying to move to destroyed tile: %v", move.pos))
@@ -471,14 +470,14 @@ func (s *Server) runGame() {
 	time.Sleep(3 * time.Second)
 
 	log.Println("game started")
-	responseTimeMS := 200
+	responseTimeMS := 250
 	const maxTileHealth uint8 = 7
 
 	var spawnPoints = [4]Vec2{
 		{2, 2},
-		{2, 5},
-		{5, 2},
-		{5, 5},
+		{2, 4},
+		{4, 2},
+		{4, 4},
 	}
 	// Initalize players with round robin spawn points.
 	players := s.initPlayerInstances(spawnPoints[:])
@@ -538,16 +537,28 @@ func (s *Server) runGame() {
 					p.dead = true;
 					playerOnTile = false;
 					s.sendToPlayer(p.token, websocket.MessageText, newRoundOverMessage(p.score, 1))
+					log.Printf("Player (%s) has died. Score: %d", p.token, p.score)
 				}
 				world.updateTile(tilePos, makeTile(tileHealth, playerOnTile));
 			}
 		}
 
-		// Add 1 to each alive players score.
-		for i := range players { if (!players[i].dead) { players[i].score += 1; } }
-		// Update World
-		// - check for player deaths and game over
+		// Add 1 to each alive players score and check for round over.
+		numAlive := 0
+		for i := range players {
+			if (!players[i].dead) {
+				players[i].score += 1
+				numAlive++
+			}
+		}
+		// Check if round is over.
+		if (numAlive <= 0) {
+			log.Printf("Round over!")
+			break;
+		}
 	}
 
-	log.Printf("sending update for tick 1")
+	s.mu.Lock()
+	s.roundInProgresss = false;
+	s.mu.Unlock()
 }

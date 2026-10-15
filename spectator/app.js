@@ -18,6 +18,7 @@ const MessageType = {
   SPECTATOR_ROUND_INFO:  -1,
   SPECTATOR_ROUND_DELTA: -2,
   WORLD_STATE:           2,
+  SPECTATOR_LOG: 10,
 };
 
 // Tile byte layout: bits 0-2 are health (0-7), bit 3 is set when a player is on the tile.
@@ -241,6 +242,7 @@ $("back-btn").addEventListener("click", disconnectAndGoBack);
 function detectType(msg) {
   if (msg.message_type === MessageType.SPECTATOR_ROUND_INFO)  return "round_info";
   if (msg.message_type === MessageType.SPECTATOR_ROUND_DELTA) return "round_delta";
+  if (msg.message_type === MessageType.SPECTATOR_LOG)		  return "spectator_log";
 
   if ("world_size_x" in msg) return "round_info";
   if ("delta_updates" in msg) return "round_delta";
@@ -268,6 +270,9 @@ function handleRaw(data) {
       break;
     case "round_delta":
       handleRoundDelta(msg);
+      break;
+    case "spectator_log":
+      handleSpectatorLog(msg);
       break;
     default:
       log(`Unknown message type ${msg.message_type}`, "warn");
@@ -346,6 +351,10 @@ function handleRoundDelta(msg) {
   }
 
   requestRender();
+}
+
+function handleSpectatorLog(msg) {
+  log(msg.text, "ok");
 }
 
 // ---------------------------------------------------------------------------

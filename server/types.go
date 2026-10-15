@@ -1,4 +1,4 @@
-package shared 
+package main
 
 import (
 	"encoding/json"
@@ -37,6 +37,7 @@ const (
 	MsgWorldState MessageType = 2
 	MsgDeltaState MessageType = 3
 	MsgRoundEnd   MessageType = 4
+	MsgSpectatorLog MessageType = 10
 )
 
 type RoundStartMessage struct {

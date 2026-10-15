@@ -58,6 +58,7 @@ func (world * WorldState) updateTile(pos Vec2, newValue uint8) {
 func (world * WorldState) isValidMovePos(pos Vec2) bool {
 	if (world.positionOutOfBounds(pos)) { return false }
 	if (getTileHealth(world.cells[world.tileIndex(pos)]) == 0) { return false; }
+	if (isPlayerOnTile(world.cells[world.tileIndex(pos)]) == true) { return false; }
 	return true;
 }
 

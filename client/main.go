@@ -5,16 +5,15 @@ import (
 	"log"
 	"github.com/coder/websocket"
 	"encoding/json"
-	"example/hello/server/shared"
 	"errors"
 	"fmt"
 	"encoding/binary"
 	"hash/crc32"
+	"math/rand"
+	"flag"
 )
 
-type MessageType = shared.MessageType;
-
-var TOKEN = "9f3a7c1e"
+var DEFAULT_TOKEN = "9f3a7c1e"
 
 type WorldState struct {
 	w, h uint32 
@@ -26,7 +25,7 @@ type WorldState struct {
 func GetMessageType(m * Message) (MessageType, error) {
 	switch m.typ {
 		case websocket.MessageText:
-			var head struct { MessageType shared.MessageType `json:"message_type"` }
+			var head struct { MessageType MessageType `json:"message_type"` }
 			if err := json.Unmarshal(m.data, &head); err != nil {
 				return 0, err
 			}
@@ -47,8 +46,8 @@ func mustUnmarshal(data []byte, d any) {
 	}
 }
 
-func deserializeRoundStartMessage(m Message) shared.RoundStartMessage {
-	var roundStartMSG shared.RoundStartMessage
+func deserializeRoundStartMessage(m Message) RoundStartMessage {
+	var roundStartMSG RoundStartMessage
 	mustUnmarshal(m.data, &roundStartMSG)
 	return roundStartMSG
 }
@@ -58,8 +57,8 @@ func deserializeWorldStateMessage(msg []byte, w, h uint32) []byte {
 	if len(msg) != int(header+w*h) {
 		log.Panicf("short world state: got %d bytes, want %d", len(msg), header+w*h)
 	}
-	if MessageType(msg[0]) != shared.MsgWorldState {
-		log.Panicf("mismatched message type: got %d, want %d", msg[0], shared.MsgWorldState)
+	if MessageType(msg[0]) != MsgWorldState {
+		log.Panicf("mismatched message type: got %d, want %d", msg[0], MsgWorldState)
 	}
 	var tick = binary.LittleEndian.Uint32(msg[1:5])
 	if (tick != 1) {
@@ -82,12 +81,12 @@ func waitWaitForRoundStart(ctx context.Context, client * Client) WorldState {
 		if err != nil { continue; }
 
 		switch messageType {
-			case shared.MsgRoundStart:
+			case MsgRoundStart:
 				var roundStartMSG = deserializeRoundStartMessage(m)
 				state.w = roundStartMSG.WorldSizeX
 				state.h = roundStartMSG.WorldSizeY
 				startReceived = true
-			case shared.MsgWorldState:
+			case MsgWorldState:
 				if (startReceived) {
 					state.tiles = deserializeWorldStateMessage(m.data, state.w, state.h)
 					return state
@@ -96,7 +95,7 @@ func waitWaitForRoundStart(ctx context.Context, client * Client) WorldState {
     }
 }
 
-func applyTileDeltas(world * WorldState, tileDeltas []shared.TileDelta, worldHash uint32) {
+func applyTileDeltas(world * WorldState, tileDeltas []TileDelta, worldHash uint32) {
 	for i := range tileDeltas {
 		t := &tileDeltas[i]
 		world.tiles[t.Pos.Y * int32(world.w) + t.Pos.X]= t.Value
@@ -118,16 +117,16 @@ func getNextWorldUpdate(ctx context.Context, client * Client, world * WorldState
 				log.Fatal(err)
 			}
 			switch messageType {
-			case shared.MsgDeltaState:
-				var d shared.DeltaStateMessage
+			case MsgDeltaState:
+				var d DeltaStateMessage
 				if err := json.Unmarshal(m.data, &d); err == nil {
 					log.Printf("Delta update received for tick %d Player pos: %d %d", d.CurrentTick, d.LocalPlayerX, d.LocalPlayerY)
 					world.playerX = uint32(d.LocalPlayerX)
 					world.playerY = uint32(d.LocalPlayerY)
 					applyTileDeltas(world, d.DeltaUpdates, d.WorldHash)
 				}
-			case shared.MsgRoundEnd:
-				var d shared.RoundOverMessage
+			case MsgRoundEnd:
+				var d RoundOverMessage
 				if err := json.Unmarshal(m.data, &d); err == nil {
 					log.Printf("Round over! placed: %d score: %d", d.Placement, d.Score)
 					return true
@@ -140,7 +139,7 @@ func getNextWorldUpdate(ctx context.Context, client * Client, world * WorldState
 }
 
 func sendMoveToServer(ctx context.Context, client * Client, x uint32, y uint32, tick uint32) {
-	data, err := json.Marshal(shared.ClientMoveMessage{Tick: tick, MoveX: x, MoveY: y});
+	data, err := json.Marshal(ClientMoveMessage{Tick: tick, MoveX: x, MoveY: y});
 	if err != nil {
 		panic(fmt.Sprintf("json marshal failed: %v", err))
 	}
@@ -148,10 +147,49 @@ func sendMoveToServer(ctx context.Context, client * Client, x uint32, y uint32, 
 	client.sendMessage(ctx, Message{typ: websocket.MessageText, data: data})
 }
 
+func isPosInBounds(x, y int32, world *WorldState) bool {
+	return x >= 0 && y >= 0 && x < int32(world.w) && y < int32(world.h)
+}
+
+func getTileHealth(world *WorldState, pos Vec2) uint32 {
+	if !isPosInBounds(pos.X, pos.Y, world) {
+		panic("position not in world bounds")
+	}
+	return uint32(world.tiles[pos.Y*int32(world.w) + pos.X] & 0b00000111)
+}
+
+func getRandomMovePos(pos Vec2, world *WorldState) Vec2 {
+	candidates := [4]Vec2{
+		{X: pos.X - 1, Y: pos.Y}, // left
+		{X: pos.X + 1, Y: pos.Y}, // right
+		{X: pos.X, Y: pos.Y - 1}, // up
+		{X: pos.X, Y: pos.Y + 1}, // down
+	}
+
+	var valid [4]Vec2
+	n := 0
+	for _, c := range candidates {
+		if isPosInBounds(c.X, c.Y, world) {
+			if (getTileHealth(world, c) > 1) {
+				valid[n] = c
+				n++
+			}
+		}
+	}
+
+	if n == 0 {
+		return pos // boxed in: stay put
+	}
+	return valid[rand.Int() % n]
+}
+
 func main() {
 	ctx := context.Background()
 
-	client, err := Connect(ctx, "ws://localhost:8080/ws", TOKEN)
+	token := flag.String("token", DEFAULT_TOKEN, "auth token for the game server")
+	flag.Parse()
+
+	client, err := Connect(ctx, "ws://localhost:8080/ws", *token)
 	if err != nil { log.Fatal(err) }
 	defer client.conn.CloseNow()
 
@@ -164,10 +202,11 @@ func main() {
 		if (roundOver) { break; }
 
 		// Calculate where to move 
-		var moveX, moveY uint32 = worldState.playerX + 1, worldState.playerY
+		var movePos = getRandomMovePos(Vec2{int32(worldState.playerX), int32(worldState.playerY)}, &worldState) 
+		// var movePos = Vec2{67,69}
 
 		// Send move to the server
-		sendMoveToServer(ctx, client, moveX, moveY, worldState.currentTick)
+		sendMoveToServer(ctx, client, uint32(movePos.X), uint32(movePos.Y), worldState.currentTick)
 	}
 
 	log.Print("exiting")

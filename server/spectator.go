@@ -34,6 +34,16 @@ type SpectatorRoundDeltaMessage struct {
 	WorldHash    uint32      `json:"world_hash"`
 }
 
+type SpectatorLogMessage struct {
+	MessageType  MessageType `json:"message_type"`
+	Text         string      `json:"text"`
+}
+
+func newSpectatorLogMessage(text string) Message {
+	var json = mustMarshal(SpectatorLogMessage{MessageType: MsgSpectatorLog, Text: text})
+	return Message{websocket.MessageText, json}
+}
+
 func (sp *Spectator) enqueue(msg Message) {
 	select {
 		case sp.send <- msg:
