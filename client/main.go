@@ -187,6 +187,7 @@ func main() {
 	ctx := context.Background()
 
 	token := flag.String("token", DEFAULT_TOKEN, "auth token for the game server")
+	log.Printf("Starting client. (token: %s)", *token)
 	flag.Parse()
 
 	client, err := Connect(ctx, "ws://localhost:8080/ws", *token)

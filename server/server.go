@@ -470,12 +470,12 @@ func (s *Server) runGame() {
 	time.Sleep(3 * time.Second)
 
 	log.Println("game started")
-	responseTimeMS := 250
+	responseTimeMS := 330
 	const maxTileHealth uint8 = 7
 
 	var spawnPoints = [4]Vec2{
 		{2, 2},
-		{2, 4},
+		{60, 4},
 		{4, 2},
 		{4, 4},
 	}

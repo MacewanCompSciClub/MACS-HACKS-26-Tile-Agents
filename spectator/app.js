@@ -325,7 +325,7 @@ let deltaCount = 0;
 function handleRoundDelta(msg) {
   deltaCount++;
   const updates = msg.delta_updates || [];
-  log(`Received delta for current tick ${msg.current_tick}.  Delta count: ${updates.length}`);
+  //log(`Received delta for current tick ${msg.current_tick}.  Delta count: ${updates.length}`);
 
   if (msg.player_info) players = msg.player_info;
 
