@@ -10,8 +10,6 @@ Be the last player alive by moving strategically across the game board and avoid
 - A programming language with a websocket library (We have sample clients written in python and go)
 - We will each team a token to sign into the server with.
 
-## Quick Start
-
 ## How to Fork and Clone a GitHub Repository
 
 ### 1. Fork the repository
@@ -50,9 +48,15 @@ cd REPOSITORY-NAME
 
 You can now edit the files on your computer.
 
-Here’s a Markdown section you can add to your `README.md` describing the game rules.
+### Authentication
 
-Writing
+Each team will be provided with a unique authentication token. To connect to the server, include your token as a query parameter in the WebSocket URL:
+
+```
+ws://SERVER_HOST:8080/ws?token=YOUR_TOKEN
+```
+
+Replace `YOUR_TOKEN` with the token assigned to your team. Connections with invalid tokens will be rejected.
 
 ## Game Rules
 
@@ -68,7 +72,7 @@ Writing
 ### Tile Health
 
 - Each tile has a health value that determines how long it remains safe.
-- Tiles lose health over time as the round progresses.
+- Tiles start to degrade as soon as a player comes in contact and will continue to degrade until there is no tile.
 - A tile with health 0 is dead and cannot safely support a player.
 
 ### Collisions
@@ -86,4 +90,6 @@ Writing
 - Players gain points for each tick they remain alive.
 - The round ends when all players have been eliminated.
 - Survive as long as possible to maximize your score.
+
+
 
