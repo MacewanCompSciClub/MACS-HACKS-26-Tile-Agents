@@ -16,6 +16,7 @@ type PlayerSpectatorData struct {
 	Pos Vec2	 `json:"pos"`
 	Dead bool	 `json:"dead"`
 	Score uint32 `json:"score"`
+	Name string  `json:"name"`
 }
 
 type SpectatorRoundInfoMessage struct {
