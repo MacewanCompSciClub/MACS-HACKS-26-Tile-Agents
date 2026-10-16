@@ -11,6 +11,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"encoding/binary"
+<<<<<<< HEAD
+=======
+	"hash/crc32"
+>>>>>>> isaac
 )
 
 type Role int
@@ -128,7 +132,11 @@ func (s *Server) remove_spectator(spectator * Spectator) {
 }
 
 var acceptOpts = &websocket.AcceptOptions{
+<<<<<<< HEAD
 	OriginPatterns: []string{"*.macewancsclub.ca", "macewancsclub.ca", "localhost:*"},
+=======
+	OriginPatterns: []string{"yoursite.com", "localhost:*"},
+>>>>>>> isaac
 }
 
 func (s *Server) handlePlayer(w http.ResponseWriter, r *http.Request, token string) {
@@ -247,11 +255,19 @@ func (s *Server) sendToPlayer(token string, typ websocket.MessageType, data []by
 	return c.conn.Write(ctx, typ, data)
 }
 
+<<<<<<< HEAD
 func (s *Server) sendToAllPlayers(players []PlayerInstance, msg Message) {
 	for i := range players {
 		p := &players[i]
 		log.Printf("sending to token=%s pos=%+v", p.token, p.pos)
 		if err := s.sendToPlayer(p.token, msg.typ, msg.data); err != nil {
+=======
+func (s *Server) sendToAllPlayers(players []PlayerInstance, typ websocket.MessageType, data []byte) {
+	for i := range players {
+		p := &players[i]
+		log.Printf("sending to token=%s pos=%+v", p.token, p.pos)
+		if err := s.sendToPlayer(p.token, typ, data); err != nil {
+>>>>>>> isaac
 			log.Printf("send to %s failed: %v", p.token, err)
 		}
 	}
@@ -266,6 +282,7 @@ func (s *Server) sendToSpectators(message Message) {
 	}
 }
 
+<<<<<<< HEAD
 func newRoundStartMessage(numPlayers int, responseTimeMS int, worldSizeX uint32, worldSizeY uint32) Message {
 	return Message{websocket.MessageText,
 				   mustMarshal(RoundStartMessage{
@@ -274,13 +291,35 @@ func newRoundStartMessage(numPlayers int, responseTimeMS int, worldSizeX uint32,
 							WorldSizeY:     worldSizeY,
 							NumPlayers:     numPlayers,
 							ResponseTimeMs: responseTimeMS})}
+=======
+func newRoundStartMessage(numPlayers int, responseTimeMS int, worldSizeX uint32, worldSizeY uint32) []byte {
+	return mustMarshal(RoundStartMessage{
+		MessageType:    MsgRoundStart,
+		WorldSizeX:     worldSizeX,
+		WorldSizeY:     worldSizeY,
+		NumPlayers:     numPlayers,
+		ResponseTimeMs: responseTimeMS,
+	})
+}
+
+func newWorldStateMessage(world * WorldState, tick uint32) []byte {
+	buf := make([]byte, 1+4+(world.w*world.h))
+	buf[0] = uint8(MsgWorldState)
+	binary.LittleEndian.PutUint32(buf[1:5], tick)
+	copy(buf[5:], world.cells)
+	return buf
+>>>>>>> isaac
 }
 
 func newWorldSnapshotMessage(world * WorldState, tick uint32) Message {
 	buf := make([]byte, 1+4+(world.w*world.h))
 	buf[0] = uint8(MsgWorldState)
 	binary.LittleEndian.PutUint32(buf[1:5], tick)
+<<<<<<< HEAD
 	copy(buf[5:], world.latestSnapshot())
+=======
+	copy(buf[5:], world.cells)
+>>>>>>> isaac
 	return Message{websocket.MessageBinary, buf}
 }
 
@@ -331,6 +370,7 @@ func newSpectatorRoundDeltaMessage(world * WorldState, tick uint32, tileDeltas [
 
 func updateTileDeltas(world * WorldState, tileDeltas []TileDelta) []TileDelta {
 	tileDeltas = tileDeltas[:0]
+<<<<<<< HEAD
 
 	a, b := world.snapshotBufs[0], world.snapshotBufs[1]
 	for i := range a {
@@ -338,6 +378,12 @@ func updateTileDeltas(world * WorldState, tileDeltas []TileDelta) []TileDelta {
 			tileDeltas = append(tileDeltas, TileDelta{world.tilePosition(int32(i)), world.snapshotBufs[world.front^1][i]})
 		}
 	}
+=======
+	for v := range world.updated {
+		tileDeltas = append(tileDeltas, TileDelta{v, world.cells[world.tileIndex(v)]})
+	}
+	clear(world.updated)
+>>>>>>> isaac
 
 	return tileDeltas
 }
@@ -425,9 +471,14 @@ func (s * Server) getValidPlayerMoves(moves []Move, world * WorldState, players 
 					continue;
 				}
 				var movePos = Vec2{X: int32(moveMessage.MoveX), Y: int32(moveMessage.MoveY)}
+<<<<<<< HEAD
 				if (!world.isValidMovePos(players[idx].pos, movePos)) {
 					s.LogSpectator("invalid move pos %v from player at %v (token: %s)",
 					movePos, players[idx].pos, msg.token)
+=======
+				if (!world.isValidMovePos(movePos)) {
+					s.LogSpectator("invalid move pos %v from player (token: %s)", movePos, msg.token)
+>>>>>>> isaac
 					continue;
 				}
 				log.Printf("got a move pos %v from player (token: %s)", movePos, msg.token)
@@ -439,6 +490,7 @@ func (s * Server) getValidPlayerMoves(moves []Move, world * WorldState, players 
 }
 
 func applyMove(move Move, world * WorldState, players []PlayerInstance) {
+<<<<<<< HEAD
 	players[move.playerIdx].pos = move.pos;
 }
 
@@ -454,6 +506,28 @@ func getPlayersOnSameTile(players []PlayerInstance) map[Vec2][]int {
 	}
 	return groups
 }
+=======
+	var fromPos = players[move.playerIdx].pos
+	var fromTile = world.cells[world.tileIndex(players[move.playerIdx].pos)]
+	var toTile = world.cells[world.tileIndex(move.pos)]
+	// Assert that there is actually a player where we are moving from.
+	if (!isPlayerOnTile(fromTile)) {
+		panic(fmt.Sprintf("player from tile mismatch. The tile the player is moving from doesn't canonically have a player on it. Player: %v Tile: %v", players[move.playerIdx].pos,fromPos))
+	}
+
+	if (isPlayerOnTile(toTile)) {
+		panic(fmt.Sprintf("Move destination has a player on it! Player Pos: %v Destination Tile: %v", players[move.playerIdx].pos, move.pos))
+	}
+	// Double check the move is valid.
+	if (!(getTileHealth(toTile) > 0)) {
+		panic(fmt.Sprintf("player trying to move to destroyed tile: %v", move.pos))
+	}
+	world.updateTile(fromPos,  fromTile & 0b0111);
+	world.updateTile(move.pos, toTile   | 0b1000);
+	players[move.playerIdx].pos = move.pos;
+}
+
+>>>>>>> isaac
 
 func (s *Server) runGame() {
 	log.Println("first player connected, starting in 5s")
@@ -465,7 +539,11 @@ func (s *Server) runGame() {
 
 	var spawnPoints = [4]Vec2{
 		{2, 2},
+<<<<<<< HEAD
 		{2, 4},
+=======
+		{60, 4},
+>>>>>>> isaac
 		{4, 2},
 		{4, 4},
 	}
@@ -478,21 +556,34 @@ func (s *Server) runGame() {
 
 	// send initial world state
 	roundStartMSG := newRoundStartMessage(len(players), responseTimeMS, uint32(world.h), uint32(world.w));
+<<<<<<< HEAD
 	initialWorldStateMSG := newWorldSnapshotMessage(world, 1)
+=======
+	initialWorldStateMSG := newWorldStateMessage(world, 1)
+>>>>>>> isaac
 	log.Printf("sending game start and world state message")
 
 	// send world state to spectators
 	s.sendToSpectators(newSpectatorRoundInfoMessage(world, players))
 	s.sendToSpectators(newWorldSnapshotMessage(world, 1))
 
+<<<<<<< HEAD
 	s.sendToAllPlayers(players[:], roundStartMSG)
 	s.sendToAllPlayers(players[:], initialWorldStateMSG)
+=======
+	s.sendToAllPlayers(players[:], websocket.MessageText,   roundStartMSG)
+	s.sendToAllPlayers(players[:], websocket.MessageBinary, initialWorldStateMSG)
+>>>>>>> isaac
 
 	var currentTick uint32 = 1
 	for {
 		// Send delta update messages to all players
+<<<<<<< HEAD
 		world.buildSnapshot(players)
 		var worldHash = world.getSnapshotHash() 
+=======
+		var worldHash uint32 = crc32.ChecksumIEEE(world.cells)
+>>>>>>> isaac
 
 		tileDeltas = updateTileDeltas(world, tileDeltas)
 		for i := range players {
@@ -515,6 +606,7 @@ func (s *Server) runGame() {
 			applyMove(playerMoves[i], world, players)
 		}
 
+<<<<<<< HEAD
 		// Check if any players are on the same tile after moving
 		for pos, indexes := range getPlayersOnSameTile(players) {
 			fmt.Println(pos, indexes) // {1 2} [0 2]
@@ -551,6 +643,24 @@ func (s *Server) runGame() {
 				case 7: // Start decaying tile.
 					world.tiles[world.tileIndex(p.pos)] -= 1
 				default:
+=======
+		// update world.
+		for i := range world.cells {
+			tilePos := world.tilePosition(int32(i))
+			tileHealth := getTileHealth(world.cells[i])
+			playerOnTile := isPlayerOnTile(world.cells[i])
+			if ((tileHealth < maxTileHealth && tileHealth > 0) || (tileHealth == maxTileHealth && playerOnTile)) {
+				tileHealth -= 1
+				// check if player is on tile and kill it
+				if (playerOnTile && tileHealth == 0) {
+					var p *PlayerInstance = findPlayerAt(tilePos, players);
+					p.dead = true;
+					playerOnTile = false;
+					s.sendToPlayer(p.token, websocket.MessageText, newRoundOverMessage(p.score, 1))
+					log.Printf("Player (%s) has died. Score: %d", p.token, p.score)
+				}
+				world.updateTile(tilePos, makeTile(tileHealth, playerOnTile));
+>>>>>>> isaac
 			}
 		}
 
@@ -565,12 +675,15 @@ func (s *Server) runGame() {
 		// Check if round is over.
 		if (numAlive <= 0) {
 			log.Printf("Round over!")
+<<<<<<< HEAD
 			world.buildSnapshot(players)
 			worldHash = world.getSnapshotHash() 
 
 			tileDeltas = updateTileDeltas(world, tileDeltas)
 			s.sendToSpectators(newSpectatorRoundDeltaMessage(world, currentTick, tileDeltas, worldHash, players[:]))
 			s.updateSpectatorView(world, currentTick, players, tileDeltas, worldHash)
+=======
+>>>>>>> isaac
 			break;
 		}
 	}

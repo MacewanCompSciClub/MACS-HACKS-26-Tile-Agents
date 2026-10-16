@@ -6,7 +6,11 @@
 
 const SERVERS = {
   local: { label: "Local", host: "localhost",    port: 8080, token: "FFFFFFFF" },
+<<<<<<< HEAD
   vps:   { label: "VPS",   host: "hack.macewancsclub.ca",  port: 8080, token: "FFFFFFFF" }, // TODO: real VPS values
+=======
+  vps:   { label: "VPS",   host: "YOUR_VPS_IP",  port: 8080, token: "FFFFFFFF" }, // TODO: real VPS values
+>>>>>>> isaac
 };
 
 // Path of the spectator websocket endpoint on the Go server.
