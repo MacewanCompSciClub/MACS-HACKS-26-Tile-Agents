@@ -5,8 +5,8 @@
 // ---------------------------------------------------------------------------
 
 const SERVERS = {
-  local: { label: "Local", host: "localhost",    port: 8080, token: "FFFFFFFF" },
-  vps:   { label: "VPS",   host: "hack.macewancsclub.ca",  port: 443, token: "FFFFFFFF" },
+  local: { label: "Local", scheme: "ws",  host: "localhost",			 port: 8080, token: "FFFFFFFF" },
+  vps:   { label: "VPS",   scheme: "wss", host: "hack.macewancsclub.ca", port: 443,  token: "FFFFFFFF" },
 };
 
 // Path of the spectator websocket endpoint on the Go server.
@@ -184,7 +184,7 @@ function setStatus(state, text) {
 
 function connectTo(key) {
   const server = SERVERS[key];
-  const url = `ws://${server.host}:${server.port}${WS_PATH}?token=${encodeURIComponent(server.token)}`;
+  const url = `${server.scheme}://${server.host}:${server.port}${WS_PATH}?token=${encodeURIComponent(server.token)}`;
 
   logEl.textContent = "";
   targetLabel.textContent = `${server.label} (${server.host}:${server.port})`;
@@ -231,7 +231,7 @@ function disconnectAndGoBack() {
   showScreen("start");
 }
 
-$("connect-local-btn").addEventListener("click", () => connectTo("local"));
+//$("connect-local-btn").addEventListener("click", () => connectTo("local"));
 $("connect-vps-btn").addEventListener("click", () => connectTo("vps"));
 $("back-btn").addEventListener("click", disconnectAndGoBack);
 
@@ -318,6 +318,8 @@ function handleRoundInfo(msg) {
   worldSize = { x: msg.world_size_x, y: msg.world_size_y };
   players = msg.player_info || [];
   log(`Round info: world size ${msg.world_size_x} x ${msg.world_size_y}, ${msg.num_players} players`, "ok");
+  const names = players.map(p => p.name);
+  log(`Players: ${names.join(", ")}`, "ok");
   requestRender();
 }
 

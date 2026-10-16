@@ -60,6 +60,7 @@ type PlayerInstance struct {
 	nextMovePos Vec2
 	dead        bool
 	score       uint32
+	name		string
 }
 
 type Move struct {
@@ -213,7 +214,8 @@ func (s *Server) initPlayerInstances(spawns []Vec2) []PlayerInstance {
 
 	var instances []PlayerInstance
 	for _, c := range s.clients {
-		instances = append(instances, PlayerInstance{token: c.token})
+		instances = append(instances,
+						   PlayerInstance{token: c.token, name: s.auth.playerByToken[c.token]})
 	}
 
 	if len(spawns) < len(instances) {
@@ -350,6 +352,7 @@ func spectatorPlayerInfoSnapshot(players []PlayerInstance) []PlayerSpectatorData
 			Pos:   p.pos,
 			Score: p.score,
 			Dead:  p.dead,
+			Name:  p.name,
 		}
 	}
 	return out
@@ -467,7 +470,7 @@ func (s *Server) runGame() {
 
 	var spawnPoints = [4]Vec2{
 		{2, 2},
-		{2, 4},
+		{61, 2},
 		{4, 2},
 		{4, 4},
 	}

@@ -190,7 +190,9 @@ func main() {
 	log.Printf("Starting client. (token: %s)", *token)
 	flag.Parse()
 
-	client, err := Connect(ctx, "ws://localhost:8080/ws", *token)
+	//var address string = "ws://localhost:8080/ws"
+	var address string = "ws://hack.macewancsclub.ca:8080/ws"
+	client, err := Connect(ctx, address, *token)
 	if err != nil { log.Fatal(err) }
 	defer client.conn.CloseNow()
 
