@@ -1,0 +1,10 @@
+{
+  "allowed_connections": {
+    "crimson_wolves": "9f3a7c1e",
+    "shadow_vipers":  "b7e4c1a9",
+    "dart_monkeys":  "DEADBEEF",
+    "debuggers":     "C0FFEE"
+  },
+  "spectator_token": "FFFFFFFF",
+  "master_spectator_token": "e3a1f9c7"
+}
