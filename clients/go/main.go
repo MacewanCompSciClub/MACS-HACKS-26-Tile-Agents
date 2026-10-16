@@ -11,6 +11,7 @@ import (
 	"hash/crc32"
 	"math/rand"
 	"flag"
+	"os"
 )
 
 var DEFAULT_TOKEN = "9f3a7c1e"
@@ -186,7 +187,15 @@ func getRandomMovePos(pos Vec2, world *WorldState) Vec2 {
 func main() {
 	ctx := context.Background()
 
-	token := flag.String("token", DEFAULT_TOKEN, "auth token for the game server")
+	token := flag.String("token", "", "auth token for the game server (required)")
+	flag.Parse()
+
+	if *token == "" {
+		fmt.Fprintln(os.Stderr, "error: -token is required")
+		flag.Usage()
+		os.Exit(2)
+	}
+
 	log.Printf("Starting client. (token: %s)", *token)
 	flag.Parse()
 
