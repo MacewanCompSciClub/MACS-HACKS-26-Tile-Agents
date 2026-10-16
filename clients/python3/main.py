@@ -1,31 +1,34 @@
 """
 MaCS tournament client.
 
-Install:  pip install websockets
-Run:      python client.py
+Install: pip install websockets
+Run:     python client.py
 """
+
 import asyncio
 import json
-import random # you can remove this later
+import random
 import zlib
+
 import websockets
 
 from world import Vec2, World
+from bot import choose_move
+
 
 HOST = "hack.macewancsclub.ca"
 PORT = 8080
-TOKEN = "9f3a7c1e"  # the token your team was given
+TOKEN = "9f3a7c1e"
 
 URL = f"ws://{HOST}:{PORT}/ws?token={TOKEN}"
+LOCALURL = f"ws://localhost:{PORT}/ws?token={TOKEN}"
 
-# Message types (from the server's MessageType constants)
 MSG_ROUND_START = 1
 MSG_WORLD_STATE = 2
 MSG_DELTA_STATE = 3
 MSG_ROUND_END = 4
 MSG_SPECTATOR_LOG = 10
 
-# The docs show string names in the JSON examples, so accept those too.
 NAME_TO_ID = {
     "round_start": MSG_ROUND_START,
     "world_state": MSG_WORLD_STATE,
@@ -35,21 +38,81 @@ NAME_TO_ID = {
 }
 
 
-def choose_move(world: World) -> Vec2:
-    """
-    YOUR BOT LOGIC GOES HERE. Return the tile you want to move to.
-
-    This starter just steps onto the neighboring tile at random
-    """
-    me = world.get_my_position()
-    neighbours = world.get_neighbors(me.x, me.y)
-    return random.choice(neighbours)
 
 def make_move_message(tick: int, target: Vec2) -> str:
+    """Serialize a move into JSON."""
+    return json.dumps({
+        "tick": tick,
+        "move_x": target.x,
+        "move_y": target.y,
+    })
+
+
+def handle_world_snapshot(message: bytes, width: int, height: int) -> World:
+    """Decode a binary world snapshot."""
+    world = World.from_snapshot(message, width, height)
+    print(world)
+    return world
+
+
+def handle_round_start(data: dict) -> tuple[World, int, int]:
+    """Initialize state at the beginning of a round."""
+    width = data["world_size_x"]
+    height = data["world_size_y"]
+    world = World.empty(width, height)
+
+    print(
+        f"Round start: {width}x{height}, "
+        f"{data['num_players']} players, "
+        f"{data['response_time_ms']}ms per move"
+    )
+
+    return world, width, height
+
+
+async def handle_delta_state(ws, world: World, data: dict) -> bool:
+    """Apply a world update and send the next move.
+
+    Returns False if the world hash does not match.
     """
-    just turns the sh*t into json (I hate that guy)
-    """
-    return json.dumps({"tick": tick, "move_x": target.x, "move_y": target.y})
+    world.tick = data["current_tick"]
+    world.local_player = Vec2(
+        data["local_player_x"],
+        data["local_player_y"],
+    )
+
+    for delta in data.get("delta_updates") or []:
+        pos = delta["pos"]
+        world.apply_delta(pos[0], pos[1], delta["tile_value"])
+
+    actual_hash = zlib.crc32(world.data)
+    if actual_hash != data["world_hash"]:
+        print("World hash mismatch; closing connection.")
+        await ws.close(code=1002, reason="world hash mismatch")
+        return False
+
+    target = choose_move(world)
+    await ws.send(make_move_message(world.tick, target))
+    return True
+
+
+def handle_round_end(data: dict) -> None:
+    """Print the final round results."""
+    print(
+        f"Round over: score={data.get('score')} "
+        f"placement={data.get('placement')}"
+    )
+
+
+def decode_message(message: str) -> dict:
+    """Parse JSON and normalize string message types."""
+    data = json.loads(message)
+    mtype = data.get("message_type")
+
+    if isinstance(mtype, str):
+        data["message_type"] = NAME_TO_ID.get(mtype)
+
+    return data
 
 
 async def main():
@@ -58,62 +121,38 @@ async def main():
 
     async with websockets.connect(URL) as ws:
         print("Connected")
-        async for message in ws:
 
-            # ---- binary: full world snapshot ----
+        async for message in ws:
+            # Binary messages: full world snapshots.
             if isinstance(message, bytes):
                 if message and message[0] == MSG_WORLD_STATE:
-                    world = World.from_snapshot(message, width, height)
-                    print(world)
+                    world = handle_world_snapshot(message, width, height)
                 else:
-                    print("Unknown binary message, first byte:", message[:1])
+                    print("Unknown binary message:", message[:1])
                 continue
 
-            # ---- text: JSON ----
-            data = json.loads(message)
+            # Text messages: JSON protocol.
+            data = decode_message(message)
             mtype = data.get("message_type")
-            if isinstance(mtype, str):
-                mtype = NAME_TO_ID.get(mtype)
 
             if mtype == MSG_ROUND_START:
-                width = data["world_size_x"]
-                height = data["world_size_y"]
-                # Start with a blank world; a snapshot or deltas will fill it in.
-                world = World.empty(width, height)
-                print(f"Round start: {width}x{height}, {data['num_players']} players, "
-                      f"{data['response_time_ms']}ms per move")
+                world, width, height = handle_round_start(data)
 
             elif mtype == MSG_DELTA_STATE:
                 if world is None:
                     continue
-                world.tick = data["current_tick"]
-                world.local_player = Vec2(data["local_player_x"], data["local_player_y"])
 
-                # Go sends an empty slice as null, so fall back to []
-                for delta in data.get("delta_updates") or []:
-                    pos = delta["pos"]  # Go's Vec2 has no json tags, so keys are "X" and "Y"
-                    world.apply_delta(pos[0], pos[1], delta["tile_value"])
-
-
-                # crc32ieee
-                checksum = zlib.crc32(world.data)
-                if checksum != data["world_hash"]:
-                    # Crash out
-                    print("We are crashing the F out")
-                    await ws.close(code=1002, reason="world hash mismatch")
+                should_continue = await handle_delta_state(ws, world, data)
+                if not should_continue:
                     break
-                    
-
-                target = choose_move(world)
-                await ws.send(make_move_message(world.tick, target))
 
             elif mtype == MSG_ROUND_END:
-                print(f"Round over: score={data.get('score')} placement={data.get('placement')}")
-                await ws.close(code=1000)
+                handle_round_end(data)
 
             else:
                 print("Unhandled message:", data)
                 await ws.close(code=1002, reason="unknown message type")
+                break
 
 
 if __name__ == "__main__":
