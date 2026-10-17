@@ -468,11 +468,15 @@ func (s *Server) runGame() {
 	responseTimeMS := 330
 	const maxTileHealth uint8 = 7
 
-	var spawnPoints = [4]Vec2{
+	var spawnPoints = [8]Vec2{
 		{2, 2},
 		{61, 2},
-		{4, 2},
-		{4, 4},
+		{2, 61},
+		{61, 61}, // bottom right 
+		{31, 2}, // top mid
+		{2, 31}, // left mid
+		{32, 61}, // bottom mid
+		{61, 31}, // left mid
 	}
 	// Initalize players with round robin spawn points.
 	players := s.initPlayerInstances(spawnPoints[:])
